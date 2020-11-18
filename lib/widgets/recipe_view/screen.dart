@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_data/flutter_data.dart' hide Provider;
+import 'package:flutter_data_state/flutter_data_state.dart';
+import 'package:flutter_offline/flutter_offline.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
-import 'package:weekly_menu_app/providers/recipes_provider.dart';
 
 import '../../globals/errors_handlers.dart';
 import 'add_ingredient_button.dart';
@@ -13,9 +15,10 @@ import 'recipe_tags.dart';
 import 'editable_text_field.dart';
 
 class RecipeView extends StatefulWidget {
+  final String recipeId;
   final Object heroTag;
 
-  RecipeView({this.heroTag});
+  RecipeView(this.recipeId, {this.heroTag});
 
   @override
   _RecipeViewState createState() => _RecipeViewState();
@@ -37,177 +40,199 @@ class _RecipeViewState extends State<RecipeView> {
 
   @override
   Widget build(BuildContext context) {
-    RecipeOriginator recipe = Provider.of<RecipeOriginator>(context);
+    final recipesRepo = context.watch<Repository<Recipe>>();
 
-    return WillPopScope(
-      onWillPop: () async {
-        _handleBackButton(context, recipe);
-        return true;
-      },
-      child: Scaffold(
-        body: Form(
-          key: _formKey,
-          child: CustomScrollView(
-            slivers: <Widget>[
-              RecipeAppBar(
-                recipe,
-                heroTag: widget.heroTag,
-                editModeEnabled: _editEnabled,
-                onRecipeEditEnabled: (editEnabled) =>
-                    _handleEditToggle(recipe, editEnabled),
-                onBackPressed: () => _handleBackButton(context, recipe),
-              ),
-              SliverList(
-                delegate: SliverChildListDelegate([
-                  SizedBox(
-                    height: 5,
-                  ),
-                  EditableTextField(
-                    recipe.description,
-                    editEnabled: _editEnabled,
-                    hintText: "Description",
-                    onSubmitted: (newDescription) =>
-                        recipe.updateDescription(newDescription),
-                  ),
-                  SizedBox(
-                    height: 5,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(3.0),
-                    child: Text(
-                      "Information",
-                      style: TextStyle(
-                        fontFamily: 'Rubik',
-                        fontSize: 18,
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    height: 5,
-                  ),
-                  Card(
-                    child: Padding(
-                      padding: EdgeInsets.only(left: 10, right: 10),
-                      child: RecipeInformationTiles(
-                        recipe,
-                        editEnabled: _editEnabled,
-                        formKey: _formKey,
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    height: 5,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(3.0),
-                    child: Text(
-                      "Ingredients",
-                      style: TextStyle(
-                        fontFamily: 'Rubik',
-                        fontSize: 18,
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    height: 5,
-                  ),
-                  if (recipe.ingredients.isEmpty && !_editEnabled)
-                    EditableTextField(
-                      "",
-                      editEnabled: false,
-                      hintText: "No ingredients",
-                    ),
-                  if (recipe.ingredients.isNotEmpty)
-                    ...recipe.ingredients
-                        .map(
-                          (recipeIng) => ChangeNotifierProvider.value(
-                            value: recipeIng,
-                            child: DismissibleRecipeIngredientTile(
-                              recipe,
-                              _editEnabled,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  if (_editEnabled)
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: AddIngredientButton(recipe),
-                    ),
-                  SizedBox(
-                    height: 5,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(3.0),
-                    child: Text(
-                      "Prepation",
-                      style: TextStyle(
-                        fontFamily: 'Rubik',
-                        fontSize: 18,
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    height: 5,
-                  ),
-                  EditableTextField(
-                    recipe.preparation,
-                    editEnabled: _editEnabled,
-                    hintText: "Add preparation steps...",
-                    maxLines: 1000,
-                    onChanged: (text) => recipe.updatePreparation(text),
-                  ),
-                  SizedBox(
-                    height: 5,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(3.0),
-                    child: Text(
-                      "Notes",
-                      style: TextStyle(
-                        fontFamily: 'Rubik',
-                        fontSize: 18,
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    height: 5,
-                  ),
-                  EditableTextField(
-                    recipe.note,
-                    editEnabled: _editEnabled,
-                    hintText: "Add note...",
-                    maxLines: 1000,
-                    onChanged: (text) => recipe.updateNote(text),
-                  ),
-                  SizedBox(
-                    height: 5,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(3.0),
-                    child: Text(
-                      "Tags",
-                      style: TextStyle(
-                        fontFamily: 'Rubik',
-                        fontSize: 18,
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    height: 5,
-                  ),
-                  RecipeTags(
-                    recipe: recipe,
-                    editEnabled: _editEnabled,
-                  ),
-                  SizedBox(
-                    height: 5,
-                  ),
-                ]),
-              ),
-            ],
+    return DataStateBuilder<Recipe>(
+      notifier: () => recipesRepo.watchOne(widget.recipeId),
+      builder: (context, state, notifier, _) {
+        if (state.isLoading && !state.hasModel) {
+          return Center(child: CircularProgressIndicator());
+        }
+
+        if (state.hasException && !state.hasModel) {
+          return Text("Error occurred");
+        }
+
+        final recipe = RecipeOriginator(state.model);
+
+        return WillPopScope(
+          onWillPop: () async {
+            _handleBackButton(context, recipe);
+            return true;
+          },
+          child: Scaffold(
+            body: RefreshIndicator(
+              onRefresh: () async => notifier.reload(),
+              child: buildForm(recipe),
+            ),
           ),
-        ),
+        );
+      },
+    );
+  }
+
+  Form buildForm(RecipeOriginator recipe) {
+    return Form(
+      key: _formKey,
+      child: CustomScrollView(
+        slivers: <Widget>[
+          RecipeAppBar(
+            recipe,
+            heroTag: widget.heroTag,
+            editModeEnabled: _editEnabled,
+            onRecipeEditEnabled: (editEnabled) =>
+                _handleEditToggle(recipe, editEnabled),
+            onBackPressed: () => _handleBackButton(context, recipe),
+          ),
+          SliverList(
+            delegate: SliverChildListDelegate([
+              SizedBox(
+                height: 5,
+              ),
+              EditableTextField(
+                recipe.description,
+                editEnabled: _editEnabled,
+                hintText: "Description",
+                onSubmitted: (newDescription) =>
+                    recipe.updateDescription(newDescription),
+              ),
+              SizedBox(
+                height: 5,
+              ),
+              Padding(
+                padding: const EdgeInsets.all(3.0),
+                child: Text(
+                  "Information",
+                  style: TextStyle(
+                    fontFamily: 'Rubik',
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 5,
+              ),
+              Card(
+                child: Padding(
+                  padding: EdgeInsets.only(left: 10, right: 10),
+                  child: RecipeInformationTiles(
+                    recipe,
+                    editEnabled: _editEnabled,
+                    formKey: _formKey,
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 5,
+              ),
+              Padding(
+                padding: const EdgeInsets.all(3.0),
+                child: Text(
+                  "Ingredients",
+                  style: TextStyle(
+                    fontFamily: 'Rubik',
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 5,
+              ),
+              if (recipe.ingredients.isEmpty && !_editEnabled)
+                EditableTextField(
+                  "",
+                  editEnabled: false,
+                  hintText: "No ingredients",
+                ),
+              if (recipe.ingredients.isNotEmpty)
+                ...recipe.ingredients
+                    .map(
+                      (recipeIng) => ChangeNotifierProvider.value(
+                        value: recipeIng,
+                        child: DismissibleRecipeIngredientTile(
+                          recipe,
+                          _editEnabled,
+                        ),
+                      ),
+                    )
+                    .toList(),
+              if (_editEnabled)
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: AddIngredientButton(recipe),
+                ),
+              SizedBox(
+                height: 5,
+              ),
+              Padding(
+                padding: const EdgeInsets.all(3.0),
+                child: Text(
+                  "Prepation",
+                  style: TextStyle(
+                    fontFamily: 'Rubik',
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 5,
+              ),
+              EditableTextField(
+                recipe.preparation,
+                editEnabled: _editEnabled,
+                hintText: "Add preparation steps...",
+                maxLines: 1000,
+                onChanged: (text) => recipe.updatePreparation(text),
+              ),
+              SizedBox(
+                height: 5,
+              ),
+              Padding(
+                padding: const EdgeInsets.all(3.0),
+                child: Text(
+                  "Notes",
+                  style: TextStyle(
+                    fontFamily: 'Rubik',
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 5,
+              ),
+              EditableTextField(
+                recipe.note,
+                editEnabled: _editEnabled,
+                hintText: "Add note...",
+                maxLines: 1000,
+                onChanged: (text) => recipe.updateNote(text),
+              ),
+              SizedBox(
+                height: 5,
+              ),
+              Padding(
+                padding: const EdgeInsets.all(3.0),
+                child: Text(
+                  "Tags",
+                  style: TextStyle(
+                    fontFamily: 'Rubik',
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 5,
+              ),
+              RecipeTags(
+                recipe: recipe,
+                editEnabled: _editEnabled,
+              ),
+              SizedBox(
+                height: 5,
+              ),
+            ]),
+          ),
+        ],
       ),
     );
   }
@@ -230,8 +255,8 @@ class _RecipeViewState extends State<RecipeView> {
       showProgressDialog(context);
 
       try {
-        await Provider.of<RecipesProvider>(context, listen: false)
-            .saveRecipe(recipe);
+        final r = await context.read<Repository<Recipe>>().save(recipe.save());
+        print(r);
       } catch (e) {
         showAlertErrorMessage(context);
         return;

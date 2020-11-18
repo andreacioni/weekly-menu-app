@@ -1,21 +1,23 @@
-import 'package:flutter/foundation.dart';
+import 'dart:convert';
 
-class Ingredient with ChangeNotifier {
-  String id;
+import 'package:flutter_data/flutter_data.dart';
+import 'package:json_annotation/json_annotation.dart';
+
+import 'base_model.dart';
+
+part 'ingredient.g.dart';
+
+@JsonSerializable()
+@DataRepository([BaseAdapter])
+class Ingredient extends BaseModel<Ingredient> {
   String name;
 
-  Ingredient({this.id, this.name});
+  Ingredient({String id, this.name}) : super(id: id);
 
-  factory Ingredient.fromJson(Map<String, dynamic> jsonMap) {
-    return Ingredient(
-      id: jsonMap['_id'],
-      name: jsonMap['name'],
-    );
-  }
+  factory Ingredient.fromJson(Map<String, dynamic> json) =>
+      _$IngredientFromJson(json);
 
-  Map<String, dynamic> toJSON() {
-    return {
-      'name': name,
-    };
-  }
+  Map<String, dynamic> toJson() => _$IngredientToJson(this);
+
+  Ingredient clone() => Ingredient.fromJson(this.toJson());
 }

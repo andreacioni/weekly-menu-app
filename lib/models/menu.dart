@@ -1,22 +1,47 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_data/flutter_data.dart';
 import 'package:intl/intl.dart';
 import 'package:json_annotation/json_annotation.dart';
-import 'package:provider/provider.dart';
 import 'package:weekly_menu_app/globals/date.dart';
-import 'package:weekly_menu_app/globals/memento.dart';
-import 'package:weekly_menu_app/providers/menus_provider.dart';
+import 'package:weekly_menu_app/models/base_model.dart';
 
-import '../globals/utils.dart' as utils;
-import '../datasource/network.dart';
-import './enums/meals.dart';
+import '../globals/memento.dart';
 import './recipe.dart';
+import 'enums/meals.dart';
 
 part 'menu.g.dart';
+
+@JsonSerializable()
+@DataRepository([BaseAdapter])
+class Menu extends BaseModel<Menu> {
+  static final _dateParser = DateFormat('y-M-d');
+
+  @JsonKey(toJson: dateToJson, fromJson: dateFromJson)
+  Date date;
+
+  Meal meal;
+
+  @JsonKey(includeIfNull: false, defaultValue: [])
+  List<String> recipes;
+
+  Menu({String id, this.date, this.meal, this.recipes}) : super(id: id);
+
+  factory Menu.fromJson(Map<String, dynamic> json) => _$MenuFromJson(json);
+
+  Map<String, dynamic> toJson() => _$MenuToJson(this);
+
+  @override
+  Menu clone() => Menu.fromJson(this.toJson());
+
+  static String dateToJson(Date date) => date.format(_dateParser);
+
+  static Date dateFromJson(String date) => Date.parse(_dateParser, date);
+}
 
 class MenuOriginator extends Originator<Menu> {
   MenuOriginator(Menu original) : super(original);
 
-  void addRecipe(RecipeOriginator recipe) {
+  void addRecipe(Recipe recipe) {
     if (recipe != null) {
       addRecipeById(recipe.id);
     }
@@ -58,33 +83,6 @@ class MenuOriginator extends Originator<Menu> {
   bool get isEmpty => instance.recipes == null || instance.recipes.isEmpty;
 
   Map<String, dynamic> toJson() => instance.toJson();
-}
-
-@JsonSerializable()
-class Menu implements Cloneable<Menu> {
-  static final _dateParser = DateFormat('y-M-d');
-
-  @JsonKey(name: '_id')
-  String id;
-  @JsonKey(toJson: dateToJson, fromJson: dateFromJson)
-  Date date;
-  Meal meal;
-
-  @JsonKey(includeIfNull: false, defaultValue: [])
-  List<String> recipes;
-
-  Menu({this.id, this.date, this.meal, this.recipes});
-
-  factory Menu.fromJson(Map<String, dynamic> json) => _$MenuFromJson(json);
-
-  Map<String, dynamic> toJson() => _$MenuToJson(this);
-
-  @override
-  Menu clone() => Menu.fromJson(this.toJson());
-
-  static String dateToJson(Date date) => date.format(_dateParser);
-
-  static Date dateFromJson(String date) => Date.parse(_dateParser, date);
 }
 
 class DailyMenu
@@ -135,7 +133,7 @@ class DailyMenu
     notifyListeners();
   }
 
-  void addRecipeToMeal(Meal meal, RecipeOriginator recipe) {
+  void addRecipeToMeal(Meal meal, Recipe recipe) {
     var menu = getMenuByMeal(meal);
 
     assert(menu != null);
@@ -218,15 +216,15 @@ class DailyMenu
     notifyListeners();
   }
 
-  Future<void> save(BuildContext context, MenusProvider menusProvider) async {
+  Future<void> save(
+      BuildContext context, Repository<Menu> menuRepository) async {
     for (MenuOriginator menu in menus) {
       if (menu.recipes.isEmpty) {
         // No recipes in menu means that there isn't a menu for that meal, so when can remove it
-        await Provider.of<MenusProvider>(context, listen: false)
-            .removeMenu(menu);
+        await menuRepository.delete(menu);
         removeMenu(menu);
       } else {
-        await Provider.of<MenusProvider>(context, listen: false).saveMenu(menu);
+        await menuRepository.save(menu.instance);
       }
     }
   }
